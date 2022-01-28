@@ -3,19 +3,56 @@ package main
 import (
   _ "embed"
   "fmt"
-  "strings"
+  "sort"
 )
 
 //go:embed 5-letter-words.txt
 var data string
 
 var allWords []string
+var wordScore map[string]int64
 
 func init() {
   // Read the dictionary from the file.
-  allWords = strings.Split(data, "\n")
-  if allWords[len(allWords) - 1] == "" {
-    allWords = allWords[:len(allWords) - 1]
+  wordScore = make(map[string]int64)
+  for len(data) > 0 {
+    var word string
+    var score int64
+    k, err := fmt.Sscanf(data, "%s\t%d\n", &word, &score)
+    if err != nil || k != 2 {
+      panic(fmt.Sprintf("can't read '%s': %q", data[:20], err))
+    }
+    allWords = append(allWords, word)
+    wordScore[word] = score
+    data = data[7 + Length(score):]
+  }
+}
+
+// Length returns the number of digits in 'x', a non-negative integer.
+func Length(x int64) int {
+  if x == 0 {
+    return 1
+  }
+  ans := 0
+  for x > 0 {
+    x /= 10
+    ans++
+  }
+  return ans
+}
+
+func TestLength() {
+  if x := Length(0); x != 1 {
+    panic(fmt.Sprintf("%d", x))
+  }
+  if x := Length(1); x != 1 {
+    panic(fmt.Sprintf("%d", x))
+  }
+  if x := Length(99); x != 2 {
+    panic(fmt.Sprintf("%d", x))
+  }
+  if x := Length(100); x != 3 {
+    panic(fmt.Sprintf("%d", x))
   }
 }
 
@@ -150,6 +187,7 @@ func Play(algo func([]string)[]string) {
 func main() {
   TestScore()
   TestEval()
+  TestLength()
 
   fmt.Printf("Starting with a dictionary of %d words\n", len(allWords))
 
