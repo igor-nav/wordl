@@ -3,7 +3,8 @@ package main
 import (
   _ "embed"
   "fmt"
-  "sort"
+  "runtime"
+  "sync"
 )
 
 //go:embed 5-letter-words.txt
@@ -11,6 +12,7 @@ var data string
 
 var allWords []string
 var wordScore map[string]int64
+var scoreCache [][]int
 
 func init() {
   // Read the dictionary from the file.
@@ -107,13 +109,23 @@ func Split(targets []string, guess string) map[int][]string {
   return ans
 }
 
+// SplitFast is Split() that works on word indices rather than strings.
+func SplitFast(targets []int, guess int) map[int][]int {
+  ans := make(map[int][]int)
+  for _, target := range targets {
+    s := scoreCache[target][guess]
+    ans[s] = append(ans[s], target)
+  }
+  return ans
+}
+
 // GreedyMinimax finds the guess that minimizes the largest remaining word set.
 // It returns the list of best guesses (most likely just one).
-func GreedyMinimax(words []string) []string {
+func GreedyMinimax(words []int) []int {
   minimax := len(words)
-  bestGuesses := make([]string, 0)
+  bestGuesses := make([]int, 0)
   for _, guess := range words {
-    s := Split(words, guess)
+    s := SplitFast(words, guess)
     maxSize := 0
     for _, v := range s {
       if len(v) > maxSize {
@@ -133,10 +145,10 @@ func GreedyMinimax(words []string) []string {
 
 // Eval evaluates an algorithm on a set of words.
 // Returns a histogram of how many guesses it takes to win, by target word.
-func Eval(algo func([]string)[]string, words []string) []int {
+func Eval(algo func([]int)[]int, words []int) []int {
   guess := algo(words)[0]
   ans := make([]int, 2)
-  for reply, subWords := range Split(words, guess) {
+  for reply, subWords := range SplitFast(words, guess) {
     if reply == 22222 {
       ans[1]++
     } else {
@@ -152,47 +164,62 @@ func Eval(algo func([]string)[]string, words []string) []int {
   return ans
 }
 
-func TestEval() {
-  var x []int
-
-  x = Eval(GreedyMinimax, []string{"plane", "train"})
-  if len(x) != 3 || x[0] != 0 || x[1] != 1 || x[2] != 1 {
-    panic(fmt.Sprintf("%q", x))
-  }
-
-  x = Eval(GreedyMinimax, []string{"count", "mount", "zyzzy"})
-  if len(x) != 3 || x[0] != 0 || x[1] != 1 || x[2] != 2 {
-    panic(fmt.Sprintf("%q", x))
-  }
-}
-
 // Play plays the game interactively using the given algorithm.
-func Play(algo func([]string)[]string) {
+func Play(algo func([]int)[]int) {
   fmt.Printf("Lets play...\n")
-  words := allWords
+  words := make([]int, len(allWords))
+  for i := 0; i < len(words); i++ {
+    words[i] = i
+  }
   for len(words) > 1 {
     guess := algo(words)[0]
     fmt.Printf("There are %d possible words remaining\n", len(words))
-    fmt.Printf("Your next guess should be: %s\n", guess)
+    fmt.Printf("Your next guess should be: %s\n", allWords[guess])
     fmt.Printf("What does the game say? ")
     var reply int
     if k, err := fmt.Scanf("%d\n", &reply); k != 1 || err != nil {
       panic(err)
     }
-    words = Split(words, guess)[reply]
+    words = SplitFast(words, guess)[reply]
   }
-  fmt.Printf("And the answer is... %s!\n", words[0])
+  fmt.Printf("And the answer is... %s!\n", allWords[words[0]])
+}
+
+// PrecomputeScores caches all possible results of Score().
+func PrecomputeScores() {
+  n := len(allWords)
+  threads := runtime.NumCPU()
+  var wg sync.WaitGroup
+  scoreCache = make([][]int, n)
+
+  for k := 0; k < threads; k++ {
+    wg.Add(1)
+    go func(k int) {
+      for i := k; i < n; i += threads {
+        scoreCache[i] = make([]int, n)
+        for j := 0; j < n; j++ {
+          scoreCache[i][j] = Score(allWords[i], allWords[j])
+        }
+      }
+      wg.Done()
+    }(k)
+  }
+  wg.Wait()
 }
 
 func main() {
   TestScore()
-  TestEval()
   TestLength()
 
   fmt.Printf("Starting with a dictionary of %d words\n", len(allWords))
-
+  PrecomputeScores()
   fmt.Printf("Hold on. Computing...\n")
-  for i, x := range Eval(GreedyMinimax, allWords) {
+
+  words := make([]int, len(allWords))
+  for i := 0; i < len(words); i++ {
+    words[i] = i
+  }
+  for i, x := range Eval(GreedyMinimax, words) {
     if x > 0 {
       fmt.Printf("  %d tries to guess %4d words\n", i, x)
     }
