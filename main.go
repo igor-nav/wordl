@@ -7,54 +7,22 @@ import (
   "sync"
 )
 
-//go:embed 5-letter-words.txt
+//go:embed words1.txt
 var data string
 
 var allWords []string
-var wordScore map[string]int64
 var scoreCache [][]int
 
 func init() {
   // Read the dictionary from the file.
-  wordScore = make(map[string]int64)
   for len(data) > 0 {
     var word string
-    var score int64
-    k, err := fmt.Sscanf(data, "%s\t%d\n", &word, &score)
-    if err != nil || k != 2 {
+    k, err := fmt.Sscanf(data, "%s\n", &word)
+    if err != nil || k != 1 {
       panic(fmt.Sprintf("can't read '%s': %q", data[:20], err))
     }
     allWords = append(allWords, word)
-    wordScore[word] = score
-    data = data[7 + Length(score):]
-  }
-}
-
-// Length returns the number of digits in 'x', a non-negative integer.
-func Length(x int64) int {
-  if x == 0 {
-    return 1
-  }
-  ans := 0
-  for x > 0 {
-    x /= 10
-    ans++
-  }
-  return ans
-}
-
-func TestLength() {
-  if x := Length(0); x != 1 {
-    panic(fmt.Sprintf("%d", x))
-  }
-  if x := Length(1); x != 1 {
-    panic(fmt.Sprintf("%d", x))
-  }
-  if x := Length(99); x != 2 {
-    panic(fmt.Sprintf("%d", x))
-  }
-  if x := Length(100); x != 3 {
-    panic(fmt.Sprintf("%d", x))
+    data = data[6:]
   }
 }
 
@@ -173,7 +141,14 @@ func Play(algo func([]int)[]int) {
   }
   for len(words) > 1 {
     guess := algo(words)[0]
-    fmt.Printf("There are %d possible words remaining\n", len(words))
+    fmt.Printf("There are %d possible words remaining", len(words))
+    if len(words) < 8 {
+      fmt.Printf(":")
+      for _, w := range words {
+        fmt.Printf(" %s", w)
+      }
+    }
+    fmt.Printf("\n")
     fmt.Printf("Your next guess should be: %s\n", allWords[guess])
     fmt.Printf("What does the game say? ")
     var reply int
@@ -209,7 +184,6 @@ func PrecomputeScores() {
 
 func main() {
   TestScore()
-  TestLength()
 
   fmt.Printf("Starting with a dictionary of %d words\n", len(allWords))
   PrecomputeScores()
