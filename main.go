@@ -145,7 +145,7 @@ func Play(algo func([]int)[]int) {
     if len(words) < 8 {
       fmt.Printf(":")
       for _, w := range words {
-        fmt.Printf(" %s", w)
+        fmt.Printf(" %s", allWords[w])
       }
     }
     fmt.Printf("\n")
