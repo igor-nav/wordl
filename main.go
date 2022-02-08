@@ -8,13 +8,22 @@ import (
 )
 
 //go:embed words1.txt
-var data string
+var words1txt string
 
-var allWords []string
+//go:embed words2.txt
+var words2txt string
+
+var words1 []string
+var words2 []string
 var scoreCache [][]int
 
 func init() {
-  // Read the dictionary from the file.
+  words1 = ReadFile(words1txt)
+  words2 = ReadFile(words2txt)
+}
+
+func ReadFile(data string) []string {
+  allWords := make([]string, 0, 11000)
   for len(data) > 0 {
     var word string
     k, err := fmt.Sscanf(data, "%s\n", &word)
@@ -24,6 +33,7 @@ func init() {
     allWords = append(allWords, word)
     data = data[6:]
   }
+  return allWords
 }
 
 // Score returns the response to a guess, as a 5-digit integer.
@@ -92,7 +102,8 @@ func SplitFast(targets []int, guess int) map[int][]int {
 func GreedyMinimax(words []int) []int {
   minimax := len(words)
   bestGuesses := make([]int, 0)
-  for _, guess := range words {
+  //for _, guess := range words {
+  for guess, _ := range words1 {  // DEBUG
     s := SplitFast(words, guess)
     maxSize := 0
     for _, v := range s {
@@ -105,6 +116,54 @@ func GreedyMinimax(words []int) []int {
       bestGuesses = bestGuesses[:0]
     }
     if maxSize == minimax {
+      bestGuesses = append(bestGuesses, guess)
+    }
+  }
+  return bestGuesses
+}
+
+// GreedyLookahead2 tries all pairs of guesses and picks the best.
+func GreedyLookahead2(words []int) []int {
+  threads := runtime.NumCPU()
+  var wg sync.WaitGroup
+  minimaxes := make([]int, len(words1) + len(words2))
+
+  for k := 0; k < threads; k++ {
+    wg.Add(1)
+    go func(k int) {
+      for guess := k; guess < len(words1) + len(words2); guess++ {
+        minimaxes[guess] = len(words) * 101
+        s := SplitFast(words, guess)
+        var maxChunk []int
+        for _, v := range s {
+          if len(v) > len(maxChunk) {
+            maxChunk = v
+          }
+        }
+        for guess2, _ := range words1 {
+          s2 := SplitFast(maxChunk, guess2)
+          maxSize := 0
+          for _, v2 := range s2 {
+            maxSize = len(v2) * 100 + len(maxChunk)
+          }
+          if maxSize < minimaxes[guess] {
+            minimaxes[guess] = maxSize
+          }
+        }
+      }
+      wg.Done()
+    }(k)
+  }
+  wg.Wait()
+
+  minimax := len(words) * 101
+  bestGuesses := make([]int, 0)
+  for guess := 0; guess < len(words1) + len(words2); guess++ {
+    if minimaxes[guess] < minimax {
+      minimax = minimaxes[guess]
+      bestGuesses = bestGuesses[:0]
+    }
+    if minimaxes[guess] == minimax {
       bestGuesses = append(bestGuesses, guess)
     }
   }
@@ -135,7 +194,7 @@ func Eval(algo func([]int)[]int, words []int) []int {
 // Play plays the game interactively using the given algorithm.
 func Play(algo func([]int)[]int) {
   fmt.Printf("Lets play...\n")
-  words := make([]int, len(allWords))
+  words := make([]int, len(words1))
   for i := 0; i < len(words); i++ {
     words[i] = i
   }
@@ -145,11 +204,15 @@ func Play(algo func([]int)[]int) {
     if len(words) < 8 {
       fmt.Printf(":")
       for _, w := range words {
-        fmt.Printf(" %s", allWords[w])
+        fmt.Printf(" %s", words1[w])
       }
     }
     fmt.Printf("\n")
-    fmt.Printf("Your next guess should be: %s\n", allWords[guess])
+    if guess < len(words1) {
+      fmt.Printf("Your next guess should be: %s\n", words1[guess])
+    } else {
+      fmt.Printf("Your next guess should be: %s\n", words2[guess - len(words1)])
+    }
     fmt.Printf("What does the game say? ")
     var reply int
     if k, err := fmt.Scanf("%d\n", &reply); k != 1 || err != nil {
@@ -157,12 +220,12 @@ func Play(algo func([]int)[]int) {
     }
     words = SplitFast(words, guess)[reply]
   }
-  fmt.Printf("And the answer is... %s!\n", allWords[words[0]])
+  fmt.Printf("And the answer is... %s!\n", words1[words[0]])
 }
 
 // PrecomputeScores caches all possible results of Score().
 func PrecomputeScores() {
-  n := len(allWords)
+  n := len(words1)
   threads := runtime.NumCPU()
   var wg sync.WaitGroup
   scoreCache = make([][]int, n)
@@ -171,9 +234,12 @@ func PrecomputeScores() {
     wg.Add(1)
     go func(k int) {
       for i := k; i < n; i += threads {
-        scoreCache[i] = make([]int, n)
+        scoreCache[i] = make([]int, n + len(words2))
         for j := 0; j < n; j++ {
-          scoreCache[i][j] = Score(allWords[i], allWords[j])
+          scoreCache[i][j] = Score(words1[i], words1[j])
+        }
+        for j, w := range words2 {
+          scoreCache[i][n + j] = Score(words1[i], w)
         }
       }
       wg.Done()
@@ -185,11 +251,11 @@ func PrecomputeScores() {
 func main() {
   TestScore()
 
-  fmt.Printf("Starting with a dictionary of %d words\n", len(allWords))
+  fmt.Printf("Starting with a dictionary of %d words\n", len(words1))
   PrecomputeScores()
   fmt.Printf("Hold on. Computing...\n")
-
-  words := make([]int, len(allWords))
+/*
+  words := make([]int, len(words1))
   for i := 0; i < len(words); i++ {
     words[i] = i
   }
@@ -198,6 +264,7 @@ func main() {
       fmt.Printf("  %d tries to guess %4d words\n", i, x)
     }
   }
-
-  Play(GreedyMinimax)
+*/
+  //Play(GreedyMinimax)
+  Play(GreedyLookahead2)
 }
