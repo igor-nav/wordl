@@ -131,7 +131,7 @@ func GreedyLookahead2(words []int) []int {
   for k := 0; k < threads; k++ {
     wg.Add(1)
     go func(k int) {
-      for guess := k; guess < len(words1) + len(words2); guess++ {
+      for guess := k; guess < len(words1) + len(words2); guess += threads {
         minimaxes[guess] = len(words) * 101
         s := SplitFast(words, guess)
         var maxChunk []int
